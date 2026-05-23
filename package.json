@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "description": "Custom headless CMS admin for Eleventy + Netlify projects",
   "scripts": {
-    "postinstall": "node sync.js",
-    "sync": "node sync.js"
+    "sync": "node sync.js",
+    "release": "node release.js"
   },
   "keywords": [],
   "private": true

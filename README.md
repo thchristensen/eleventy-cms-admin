@@ -21,26 +21,12 @@ The `sync.js` script copies these files into the correct locations in your proje
 
 ## Adding to a project
 
-### 1. Install
+### 1. Copy files
 
-Once the repo is on GitHub:
-
-```bash
-npm install --save-dev github:thchristensen/eleventy-cms-admin#v1.0.0
-```
-
-Add the sync script to your `package.json`:
-
-```json
-"scripts": {
-  "sync:admin": "node node_modules/eleventy-cms-admin/sync.js"
-}
-```
-
-### 2. Sync files
+From a local clone of this repo, run:
 
 ```bash
-npm run sync:admin
+node deploy.js ../path-to-your-project
 ```
 
 This copies `admin/` and `netlify/functions/github-proxy.js` into your project. Commit the result.
@@ -124,22 +110,29 @@ Mark editable elements in your Nunjucks templates:
 ### Publishing a new version
 
 1. Edit files in `admin/` or `functions/` inside this repo
-2. Commit and tag:
+2. Commit your changes
+3. Run the release script:
    ```bash
-   git tag v1.1.0
-   git push origin main --tags
+   node release.js patch   # or: minor / major
    ```
+   This bumps the version in `VERSION` and `admin/admin.js`, commits, and pushes.
 
 ### Updating a project
 
+From a local clone of this repo:
+
 ```bash
-# Update the version pin in package.json, then:
-npm install
-npm run sync:admin
-# Review the diff — admin/ and netlify/functions/github-proxy.js will show changes
-git add admin/ netlify/functions/github-proxy.js package.json package-lock.json
-git commit -m "chore: update admin to v1.1.0"
+node deploy.js ../path-to-your-project
 ```
+
+Then in the consuming project, review the diff and commit:
+
+```bash
+git add admin/ netlify/functions/github-proxy.js
+git commit -m "chore: update admin to v1.x.x"
+```
+
+To check what version a project is running, look at the first line of its `admin/admin.js`.
 
 ### Pushing improvements back from a project
 
@@ -147,7 +140,7 @@ If you improved the admin while working in a project:
 
 ```bash
 cp path/to/project/admin/admin.js admin/admin.js
-# repeat for other changed files, then commit and tag
+# repeat for other changed files, then commit
 ```
 
 ---
