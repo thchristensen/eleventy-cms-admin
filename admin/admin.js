@@ -1228,7 +1228,7 @@ document.addEventListener('DOMContentLoaded', () => {
     showAdmin();
   } else {
     window.netlifyIdentity.init({
-      APIUrl: 'https://www.nettlespiephotography.co.uk/.netlify/identity'
+      APIUrl: `${window.location.origin}/.netlify/identity`
     });
 
     window.netlifyIdentity.on('init', async user => {
