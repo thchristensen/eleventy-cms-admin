@@ -1237,7 +1237,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.netlifyIdentity.on('login', async () => {
       await Auth.refreshToken();
       window.netlifyIdentity.close();
-      showAdmin();
+      window.location.href = '/admin';
     });
     window.netlifyIdentity.on('logout', () => {
       _authToken = null;
