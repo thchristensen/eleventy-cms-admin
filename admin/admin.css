@@ -93,6 +93,17 @@ button {
   user-select: none;
 }
 
+.admin-header__title a {
+  color: var(--muted);
+  text-decoration: none;
+  font-weight: 400;
+  transition: color var(--transition-fast);
+}
+
+.admin-header__title a:hover {
+  color: var(--accent);
+}
+
 .admin-header__actions {
   display: flex;
   align-items: center;
