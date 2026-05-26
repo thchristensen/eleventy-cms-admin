@@ -1123,6 +1123,12 @@ async function init() {
       try { _cloudConfig = await configRes.json(); } catch (_) {}
     }
 
+    const siteName = _schema._site?.name;
+    if (siteName) {
+      const siteLink = document.getElementById('site-name-link');
+      siteLink.textContent = siteName;
+    }
+
     renderSidebar(_schema);
 
     const pageKeys = Object.keys(_schema).filter(k => k !== '_collections');
