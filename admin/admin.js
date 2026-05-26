@@ -535,7 +535,7 @@ function renderSidebar(schema) {
     return btn;
   }
 
-  const pageKeys = Object.keys(schema).filter(k => k !== '_collections');
+  const pageKeys = Object.keys(schema).filter(k => !k.startsWith('_'));
   if (pageKeys.length) {
     aside.appendChild(makeLabel('Pages'));
     pageKeys.forEach(k => aside.appendChild(makeBtn(k, k, () => loadPage(k))));
@@ -1131,7 +1131,7 @@ async function init() {
 
     renderSidebar(_schema);
 
-    const pageKeys = Object.keys(_schema).filter(k => k !== '_collections');
+    const pageKeys = Object.keys(_schema).filter(k => !k.startsWith('_'));
     if (pageKeys.length > 0) {
       loadPage(pageKeys[0]);
     } else {
