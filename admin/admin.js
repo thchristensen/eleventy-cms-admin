@@ -543,8 +543,8 @@ function renderSidebar(schema) {
 
   const collections = schema._collections || [];
   for (const coll of collections) {
-    aside.appendChild(makeLabel(coll.label || coll.name));
     if (coll.files) {
+      aside.appendChild(makeLabel(coll.label || coll.name));
       coll.files.forEach(f =>
         aside.appendChild(makeBtn(`file:${coll.name}:${f.name}`, f.label || f.name, () => loadFileItem(coll.name, f)))
       );
