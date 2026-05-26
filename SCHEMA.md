@@ -6,17 +6,37 @@
 
 ## Page metadata
 
-Each top-level page key accepts two optional admin-only properties (prefixed with `_` so Eleventy ignores them):
+Each top-level page key accepts these optional admin-only properties (prefixed with `_` so Eleventy ignores them):
 
 | Option          | Type   | Description                                                            |
 | --------------- | ------ | ---------------------------------------------------------------------- |
 | `_preview_url`  | string | Path to load in the preview iframe (e.g. `"/"`, `"/contact/"`). If omitted the admin falls back to `/<pageKey>/`. Always set this explicitly to avoid surprises. |
+| `_parent`       | string | Key of the parent page this should nest under in the sidebar (e.g. `"portfolio"`). The parent must be another top-level page key. |
 
 ```json
-"home": {
-  "_preview_url": "/",
+"portfolio": {
+  "_preview_url": "/portfolio/",
+  "heading": { "type": "text", "label": "Heading" }
+},
+"wedding": {
+  "_parent": "portfolio",
+  "_preview_url": "/portfolio/wedding/",
   "heading": { "type": "text", "label": "Heading" }
 }
+```
+
+Collections (folder type) also support `_parent` to nest them under a page in the sidebar:
+
+```json
+"_collections": [
+  {
+    "name": "wedding",
+    "label": "Wedding",
+    "_parent": "portfolio",
+    "folder": "src/wedding",
+    "extension": "json"
+  }
+]
 ```
 
 ---

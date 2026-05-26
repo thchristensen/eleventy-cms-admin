@@ -526,23 +526,41 @@ function renderSidebar(schema) {
     return p;
   }
 
-  function makeBtn(navId, text, onClick) {
+  function makeBtn(navId, text, onClick, isSub = false) {
     const btn = document.createElement('button');
-    btn.className = 'page-tab';
+    btn.className = isSub ? 'page-tab page-tab--sub' : 'page-tab';
     btn.dataset.navId = navId;
     btn.textContent = text;
     btn.addEventListener('click', onClick);
     return btn;
   }
 
+  const collections = schema._collections || [];
+  const topColls = collections.filter(c => !c._parent);
+  const subColls = collections.filter(c => c._parent);
+
   const pageKeys = Object.keys(schema).filter(k => !k.startsWith('_'));
+  const topPageKeys = pageKeys.filter(k => !schema[k]._parent);
+  const subPageKeys = pageKeys.filter(k => schema[k]._parent);
+
   if (pageKeys.length) {
     aside.appendChild(makeLabel('Pages'));
-    pageKeys.forEach(k => aside.appendChild(makeBtn(k, k, () => loadPage(k))));
+    topPageKeys.forEach(k => {
+      aside.appendChild(makeBtn(k, k, () => loadPage(k)));
+      subPageKeys
+        .filter(sk => schema[sk]._parent === k)
+        .forEach(sk => aside.appendChild(makeBtn(sk, sk, () => loadPage(sk), true)));
+      subColls
+        .filter(c => c._parent === k && c.folder)
+        .forEach(c => aside.appendChild(makeBtn(`folder:${c.name}`, c.label || c.name, () => loadFolderList(c.name, c), true)));
+    });
+    // Sub-pages whose _parent key doesn't exist — render at end of pages section unfindented
+    subPageKeys
+      .filter(sk => !topPageKeys.includes(schema[sk]._parent))
+      .forEach(sk => aside.appendChild(makeBtn(sk, sk, () => loadPage(sk))));
   }
 
-  const collections = schema._collections || [];
-  for (const coll of collections) {
+  for (const coll of topColls) {
     if (coll.files) {
       aside.appendChild(makeLabel(coll.label || coll.name));
       coll.files.forEach(f =>

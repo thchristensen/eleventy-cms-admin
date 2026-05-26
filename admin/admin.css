@@ -242,6 +242,20 @@ button {
   background: var(--sidebar-active-bg);
 }
 
+.page-tab--sub {
+  padding-left: 1.875rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.page-tab--sub:hover {
+  color: var(--text);
+}
+
+.page-tab--sub.active {
+  color: var(--accent);
+}
+
 /* ── Main content ─────────────────────────────────────────────── */
 .admin-main {
   flex: 1;
