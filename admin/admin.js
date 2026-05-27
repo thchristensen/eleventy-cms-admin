@@ -1056,7 +1056,10 @@ function switchMediaTab(tab) {
   });
   document.getElementById('media-panel-upload').hidden = tab !== 'upload';
   document.getElementById('media-panel-library').hidden = tab !== 'library';
-  if (tab === 'library') loadMediaLibrary();
+  if (tab === 'library') {
+    document.getElementById('media-library-search').value = '';
+    loadMediaLibrary();
+  }
 }
 
 function selectImage(url) {
@@ -1072,20 +1075,33 @@ function selectImage(url) {
 
 async function loadMediaLibrary() {
   const grid = document.getElementById('media-library-grid');
-  if (_mediaCache) { renderMediaGrid(grid, _mediaCache); return; }
+  const search = document.getElementById('media-library-search');
+
+  const render = (term) => {
+    const filtered = term
+      ? _mediaCache.filter(u => u.filename.toLowerCase().includes(term.toLowerCase()))
+      : _mediaCache;
+    renderMediaGrid(grid, filtered, term);
+  };
+
+  if (_mediaCache) { render(search.value); return; }
   grid.innerHTML = '<p class="state-msg">Loading…</p>';
   try {
     const { content } = await GitHub.read('src/_data/media.json');
     _mediaCache = JSON.parse(content).uploads || [];
-    renderMediaGrid(grid, _mediaCache);
+    render('');
   } catch (err) {
     grid.innerHTML = `<p class="state-msg error">Could not load library: ${err.message}</p>`;
   }
+
+  search.oninput = () => render(search.value.trim());
 }
 
-function renderMediaGrid(grid, uploads) {
+function renderMediaGrid(grid, uploads, term = '') {
   if (uploads.length === 0) {
-    grid.innerHTML = '<p class="state-msg">No images yet. Upload one first.</p>';
+    grid.innerHTML = term
+      ? `<p class="state-msg">No images match "<em>${term}</em>".</p>`
+      : '<p class="state-msg">No images yet. Upload one first.</p>';
     return;
   }
   grid.innerHTML = '';
