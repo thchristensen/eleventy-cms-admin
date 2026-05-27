@@ -1,4 +1,4 @@
-/* eleventy-cms-admin v1.2.8 */
+/* eleventy-cms-admin v1.2.9 */
 // ── Cloud config (fetched from proxy on init) ─────────────────────────────────
 let _cloudConfig = { cloudName: '', uploadPreset: '' };
 
