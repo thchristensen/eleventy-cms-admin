@@ -1195,39 +1195,91 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.media-tab').forEach(btn => {
     btn.addEventListener('click', () => switchMediaTab(btn.dataset.tab));
   });
-  document.getElementById('media-upload-trigger').addEventListener('click', () => {
-    if (typeof cloudinary === 'undefined') {
-      alert('Cloudinary widget failed to load. Check your connection.');
-      return;
+  const CLOUDINARY_MAX_BYTES = 10_000_000;
+  const CLOUDINARY_MAX_DIMENSION = 4096;
+
+  async function resizeImageIfNeeded(file) {
+    if (file.size <= CLOUDINARY_MAX_BYTES) return file;
+    if (file.type === 'image/gif' || file.type === 'image/svg+xml') return file;
+
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, CLOUDINARY_MAX_DIMENSION / Math.max(bitmap.width, bitmap.height));
+    const w = Math.round(bitmap.width * scale);
+    const h = Math.round(bitmap.height * scale);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
+    bitmap.close();
+
+    for (const quality of [0.85, 0.7, 0.5]) {
+      const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', quality));
+      if (blob.size <= CLOUDINARY_MAX_BYTES) {
+        return new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' });
+      }
     }
+
+    return new Promise(res => canvas.toBlob(b => res(
+      new File([b], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' })
+    ), 'image/jpeg', 0.5));
+  }
+
+  async function uploadToCloudinary(file) {
+    const body = new FormData();
+    body.append('file', file);
+    body.append('upload_preset', _cloudConfig.uploadPreset);
+    const res = await fetch(`https://api.cloudinary.com/v1_1/${_cloudConfig.cloudName}/image/upload`, {
+      method: 'POST',
+      body,
+    });
+    if (!res.ok) throw new Error(`Cloudinary upload failed: ${res.status}`);
+    return res.json();
+  }
+
+  document.getElementById('media-upload-trigger').addEventListener('click', () => {
     if (!_cloudConfig.cloudName || !_cloudConfig.uploadPreset) {
       alert('Cloudinary is not configured. Set CLOUDINARY_CLOUD_NAME and CLOUDINARY_UPLOAD_PRESET in Netlify environment variables.');
       return;
     }
-    document.getElementById('media-upload-trigger').hidden = true;
-    document.getElementById('media-upload-loading').hidden = false;
-    cloudinary.createUploadWidget(
-      {
-        cloudName:            _cloudConfig.cloudName,
-        uploadPreset:         _cloudConfig.uploadPreset,
-        sources:              ['local'],
-        multiple:             false,
-        clientAllowedFormats: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg'],
-        maxFileSize:          10000000,
-      },
-      (error, result) => {
-        if (error) { console.error('Cloudinary upload error:', error); return; }
-        if (result.event === 'display-changed' && result.info === 'shown') {
-          document.getElementById('media-modal').close();
-        }
-        if (result.event === 'success') {
-          const url = result.info.secure_url;
-          const filename = result.info.original_filename || result.info.public_id;
-          appendToMediaLibrary(url, filename);
-          selectImage(url);
-        }
+    document.getElementById('media-file-input').click();
+  });
+
+  document.getElementById('media-file-input').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+
+    const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/svg+xml'];
+    if (!allowed.includes(file.type)) {
+      alert('Unsupported file type. Please choose a JPG, PNG, WebP, GIF, or SVG.');
+      return;
+    }
+
+    const triggerBtn = document.getElementById('media-upload-trigger');
+    const loadingEl  = document.getElementById('media-upload-loading');
+    triggerBtn.hidden = true;
+    loadingEl.hidden  = false;
+
+    try {
+      const processed = await resizeImageIfNeeded(file);
+      if (processed.size > CLOUDINARY_MAX_BYTES) {
+        alert('This file is too large to upload. Please use an image under 10 MB.');
+        triggerBtn.hidden = false;
+        loadingEl.hidden  = true;
+        return;
       }
-    ).open();
+      const data = await uploadToCloudinary(processed);
+      const url      = data.secure_url;
+      const filename = data.original_filename || data.public_id;
+      appendToMediaLibrary(url, filename);
+      selectImage(url);
+    } catch (err) {
+      console.error('Cloudinary upload error:', err);
+      alert('Upload failed. Please try again.');
+      triggerBtn.hidden = false;
+      loadingEl.hidden  = true;
+    }
   });
 
   let _previewDebounce = null;
