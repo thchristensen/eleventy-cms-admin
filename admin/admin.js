@@ -863,10 +863,14 @@ function renderFolderItemForm(container, collSchema, collectionKey, data, slug) 
   });
   backBar.appendChild(backBtn);
 
-  const slugLabel = document.createElement('span');
-  slugLabel.className = 'collection-item-bar__slug';
-  slugLabel.textContent = slug;
-  backBar.appendChild(slugLabel);
+  const slugInput = document.createElement('input');
+  slugInput.type = 'text';
+  slugInput.className = 'collection-item-bar__slug collection-item-bar__slug--editable';
+  slugInput.value = slug;
+  slugInput.setAttribute('aria-label', 'URL slug');
+  slugInput.setAttribute('data-slug-input', '');
+  if (_currentFolderItem && _currentFolderItem.isNew) slugInput.readOnly = true;
+  backBar.appendChild(slugInput);
   container.appendChild(backBar);
 
   const panel = document.createElement('div');
@@ -914,6 +918,41 @@ async function saveFolderItem() {
       finalPath = `${collectionSchema.folder}/${derivedSlug}.${ext}`;
       _currentFolderItem.repoPath = finalPath;
       _currentFolderItem.slug = derivedSlug;
+    }
+  }
+
+  // For existing items, check if the slug was edited and perform a rename if so
+  if (!isNew) {
+    const slugInputEl = document.querySelector('[data-slug-input]');
+    if (slugInputEl) {
+      const newSlug = slugify(slugInputEl.value);
+      if (newSlug && newSlug !== slug) {
+        const ext = collectionSchema.extension || 'json';
+        const newPath = `${collectionSchema.folder}/${newSlug}.${ext}`;
+
+        // Collision check
+        try {
+          await GitHub.read(newPath);
+          alert(`An item with slug "${newSlug}" already exists. Choose a different slug.`);
+          slugInputEl.value = slug;
+          return;
+        } catch (e) {
+          if (!e.message.includes('404') && !e.message.includes('Not Found')) throw e;
+        }
+
+        // Write content to new path, then delete old file
+        await GitHub.write(newPath, JSON.stringify(data, null, 2), null, `chore: rename ${slug} → ${newSlug} via admin`);
+        const { sha: oldSha } = await GitHub.read(repoPath);
+        await GitHub.delete(repoPath, oldSha, `chore: remove old slug ${slug} via admin`);
+
+        _currentFolderItem.repoPath = newPath;
+        _currentFolderItem.slug = newSlug;
+        slugInputEl.value = newSlug;
+        _currentFolderItem.sha = null;
+        return;
+      }
+      // Snap input back to canonical form if user typed something invalid
+      slugInputEl.value = slug;
     }
   }
 

@@ -1145,6 +1145,24 @@ fieldset.group,
   color: var(--muted);
 }
 
+.collection-item-bar__slug--editable {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 0.15rem 0.35rem;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.collection-item-bar__slug--editable:hover {
+  border-color: var(--border);
+}
+
+.collection-item-bar__slug--editable:focus {
+  border-color: var(--accent, #6366f1);
+  color: var(--text);
+}
+
 /* ── Login screen ─────────────────────────────────────────── */
 #login-screen {
   display: flex;
