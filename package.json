@@ -1,6 +1,6 @@
 {
   "name": "eleventy-cms-admin",
-  "version": "1.2.11",
+  "version": "1.2.12",
   "description": "Custom headless CMS admin for Eleventy + Netlify projects",
   "scripts": {
     "sync": "node sync.js",
