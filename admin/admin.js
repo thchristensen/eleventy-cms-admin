@@ -486,9 +486,10 @@ let _schema = null;
 let _cmsSha = null;
 let _activeImageField = null;
 let _mediaCache = null;
+let _mediaPageCache = null; // { uploads: [...], sha }
 
 // Collection mode state
-let _mode = 'page'; // 'page' | 'file-item' | 'folder-list' | 'folder-item'
+let _mode = 'page'; // 'page' | 'file-item' | 'folder-list' | 'folder-item' | 'media-library'
 let _currentFileItem = null;         // { collectionKey, file, sha }
 let _currentFolderCollection = null; // { collectionKey, collectionSchema }
 let _currentFolderItem = null;       // { collectionKey, collectionSchema, repoPath, sha, isNew, slug }
@@ -570,6 +571,16 @@ function renderSidebar(schema) {
       aside.appendChild(makeBtn(`folder:${coll.name}`, coll.label || coll.name, () => loadFolderList(coll.name, coll)));
     }
   }
+
+  const footer = document.createElement('div');
+  footer.className = 'admin-sidebar__footer';
+  const mediaBtn = document.createElement('button');
+  mediaBtn.className = 'page-tab';
+  mediaBtn.dataset.navId = '__media-library__';
+  mediaBtn.textContent = 'media library';
+  mediaBtn.addEventListener('click', () => loadMediaLibraryPage());
+  footer.appendChild(mediaBtn);
+  aside.appendChild(footer);
 }
 
 // ── Page loading ──────────────────────────────────────────────────────────────
@@ -1053,6 +1064,7 @@ async function saveCurrent() {
     if (_mode === 'page') await savePage();
     else if (_mode === 'file-item') await saveFileItem();
     else if (_mode === 'folder-item') await saveFolderItem();
+    else if (_mode === 'media-library') return;
 
     status.textContent = 'Saved ✓';
     status.className = 'saved';
@@ -1180,6 +1192,392 @@ async function appendToMediaLibrary(url, filename) {
   }
 }
 
+async function appendToMediaLibraryAndPage(url, filename) {
+  const entry = { url, filename, uploadedAt: new Date().toISOString() };
+  if (_mediaPageCache) _mediaPageCache.uploads.unshift(entry);
+  if (_mediaCache) _mediaCache.unshift(entry);
+  const uploads = _mediaPageCache?.uploads ?? [entry];
+  const newSha = await GitHub.write(
+    'src/_data/media.json',
+    JSON.stringify({ uploads }, null, 2),
+    _mediaPageCache?.sha ?? null,
+    'chore: add image to media library'
+  );
+  if (_mediaPageCache) _mediaPageCache.sha = newSha;
+}
+
+// ── Cloudinary helpers (module-level for reuse by media library page) ─────────
+const CLOUDINARY_MAX_BYTES = 10_000_000;
+const CLOUDINARY_MAX_DIMENSION = 4096;
+
+async function resizeImageIfNeeded(file) {
+  if (file.size <= CLOUDINARY_MAX_BYTES) return file;
+  if (file.type === 'image/gif' || file.type === 'image/svg+xml') return file;
+
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, CLOUDINARY_MAX_DIMENSION / Math.max(bitmap.width, bitmap.height));
+  const w = Math.round(bitmap.width * scale);
+  const h = Math.round(bitmap.height * scale);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
+  bitmap.close();
+
+  for (const quality of [0.85, 0.7, 0.5]) {
+    const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', quality));
+    if (blob.size <= CLOUDINARY_MAX_BYTES) {
+      return new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' });
+    }
+  }
+
+  return new Promise(res => canvas.toBlob(b => res(
+    new File([b], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' })
+  ), 'image/jpeg', 0.5));
+}
+
+async function uploadToCloudinary(file) {
+  const body = new FormData();
+  body.append('file', file);
+  body.append('upload_preset', _cloudConfig.uploadPreset);
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${_cloudConfig.cloudName}/image/upload`, {
+    method: 'POST',
+    body,
+  });
+  if (!res.ok) throw new Error(`Cloudinary upload failed: ${res.status}`);
+  return res.json();
+}
+
+// ── Media Library page ────────────────────────────────────────────────────────
+async function loadMediaLibraryPage() {
+  _mode = 'media-library';
+  _currentPage = null;
+  _currentFileItem = null;
+  _currentFolderCollection = null;
+  _currentFolderItem = null;
+
+  const formArea = document.getElementById('form-area');
+  formArea.innerHTML = '<p class="state-msg">Loading…</p>';
+
+  setActiveSidebarItem('__media-library__');
+  setPreviewVisible(false);
+  setFormNavVisible(false);
+  setSaveBtnVisible(false);
+
+  try {
+    const { content, sha } = await GitHub.read('src/_data/media.json');
+    _mediaPageCache = { uploads: JSON.parse(content).uploads || [], sha };
+  } catch (err) {
+    if (err.message.includes('404') || err.message.includes('Not Found')) {
+      _mediaPageCache = { uploads: [], sha: null };
+    } else {
+      formArea.innerHTML = `<p class="state-msg error">Error: ${err.message}</p>`;
+      return;
+    }
+  }
+
+  renderMediaLibraryPage(formArea);
+}
+
+function renderMediaLibraryPage(container) {
+  const page = document.createElement('div');
+  page.className = 'media-lib-page';
+
+  // Header
+  const header = document.createElement('div');
+  header.className = 'media-lib-page__header';
+
+  const title = document.createElement('h2');
+  title.className = 'media-lib-page__title';
+  title.textContent = 'media library';
+
+  const count = document.createElement('span');
+  count.className = 'media-lib-page__count';
+  count.id = 'ml-count';
+  count.textContent = `${_mediaPageCache.uploads.length} image${_mediaPageCache.uploads.length !== 1 ? 's' : ''}`;
+
+  const selectAllBtn = document.createElement('button');
+  selectAllBtn.type = 'button';
+  selectAllBtn.className = 'btn btn-ghost';
+  selectAllBtn.id = 'ml-select-all';
+  selectAllBtn.textContent = 'select all';
+
+  const deleteSelectedBtn = document.createElement('button');
+  deleteSelectedBtn.type = 'button';
+  deleteSelectedBtn.className = 'btn btn-danger';
+  deleteSelectedBtn.id = 'ml-delete-selected';
+  deleteSelectedBtn.textContent = 'delete selected (0)';
+  deleteSelectedBtn.hidden = true;
+
+  const uploadLabel = document.createElement('label');
+  uploadLabel.className = 'btn btn-primary';
+  uploadLabel.textContent = 'upload images';
+  const fileInput = document.createElement('input');
+  fileInput.type = 'file';
+  fileInput.id = 'ml-file-input';
+  fileInput.multiple = true;
+  fileInput.accept = 'image/jpeg,image/png,image/webp,image/gif,image/svg+xml';
+  fileInput.style.display = 'none';
+  uploadLabel.appendChild(fileInput);
+
+  header.appendChild(title);
+  header.appendChild(count);
+  header.appendChild(selectAllBtn);
+  header.appendChild(deleteSelectedBtn);
+  header.appendChild(uploadLabel);
+
+  // Upload progress
+  const progressArea = document.createElement('div');
+  progressArea.className = 'media-lib-page__upload-progress';
+  progressArea.id = 'ml-upload-progress';
+  progressArea.hidden = true;
+  const progressLabel = document.createElement('span');
+  progressLabel.className = 'ml-progress-label';
+  const progressTrack = document.createElement('div');
+  progressTrack.className = 'progress-bar';
+  const progressFill = document.createElement('div');
+  progressFill.className = 'progress-bar__fill';
+  progressTrack.appendChild(progressFill);
+  progressArea.appendChild(progressLabel);
+  progressArea.appendChild(progressTrack);
+
+  // Search
+  const searchRow = document.createElement('div');
+  searchRow.className = 'media-lib-page__search-row';
+  const searchInput = document.createElement('input');
+  searchInput.type = 'search';
+  searchInput.id = 'ml-search';
+  searchInput.placeholder = 'search images…';
+  searchRow.appendChild(searchInput);
+
+  // Grid
+  const grid = document.createElement('div');
+  grid.className = 'media-lib-page__grid';
+  grid.id = 'ml-grid';
+
+  page.appendChild(header);
+  page.appendChild(progressArea);
+  page.appendChild(searchRow);
+  page.appendChild(grid);
+
+  container.innerHTML = '';
+  container.appendChild(page);
+
+  renderMediaLibraryGrid(grid, _mediaPageCache.uploads);
+
+  // Event wiring
+  fileInput.addEventListener('change', (e) => {
+    handleMediaPageUpload(e.target.files);
+    e.target.value = '';
+  });
+
+  let searchDebounce = null;
+  searchInput.addEventListener('input', () => {
+    clearTimeout(searchDebounce);
+    searchDebounce = setTimeout(() => {
+      renderMediaLibraryGrid(grid, _mediaPageCache.uploads, searchInput.value.trim());
+    }, 200);
+  });
+
+  selectAllBtn.addEventListener('click', () => {
+    const checkboxes = grid.querySelectorAll('.media-lib-item__checkbox');
+    const allChecked = [...checkboxes].every(cb => cb.checked);
+    checkboxes.forEach(cb => {
+      cb.checked = !allChecked;
+      cb.closest('.media-lib-item').classList.toggle('media-lib-item--selected', !allChecked);
+    });
+    updateBulkDeleteBtn();
+  });
+
+  deleteSelectedBtn.addEventListener('click', () => {
+    const checked = grid.querySelectorAll('.media-lib-item__checkbox:checked');
+    const urls = [...checked].map(cb => cb.closest('.media-lib-item').dataset.url);
+    const filenames = [...checked].map(cb => cb.closest('.media-lib-item').dataset.filename);
+    deleteMediaItems(urls, filenames);
+  });
+}
+
+function renderMediaLibraryGrid(gridEl, uploads, searchTerm = '') {
+  const filtered = searchTerm
+    ? uploads.filter(u => u.filename.toLowerCase().includes(searchTerm.toLowerCase()))
+    : uploads;
+
+  gridEl.innerHTML = '';
+
+  if (filtered.length === 0) {
+    const msg = document.createElement('p');
+    msg.className = 'state-msg';
+    msg.textContent = searchTerm
+      ? `No images match "${searchTerm}".`
+      : 'No images yet. Upload some using the button above.';
+    gridEl.appendChild(msg);
+    return;
+  }
+
+  filtered.forEach(({ url, filename }) => {
+    const item = document.createElement('div');
+    item.className = 'media-lib-item';
+    item.dataset.url = url;
+    item.dataset.filename = filename;
+
+    const checkWrap = document.createElement('div');
+    checkWrap.className = 'media-lib-item__check';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'media-lib-item__checkbox';
+    cb.setAttribute('aria-label', `Select ${filename}`);
+    checkWrap.appendChild(cb);
+
+    const img = document.createElement('img');
+    img.className = 'media-lib-item__img';
+    img.src = url;
+    img.alt = filename;
+    img.loading = 'lazy';
+
+    const overlay = document.createElement('div');
+    overlay.className = 'media-lib-item__overlay';
+    const nameEl = document.createElement('span');
+    nameEl.className = 'media-lib-item__name';
+    nameEl.textContent = filename;
+    nameEl.title = filename;
+    const delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.className = 'media-lib-item__delete';
+    delBtn.textContent = 'delete';
+    overlay.appendChild(nameEl);
+    overlay.appendChild(delBtn);
+
+    item.appendChild(checkWrap);
+    item.appendChild(img);
+    item.appendChild(overlay);
+
+    item.addEventListener('click', (e) => {
+      if (e.target === delBtn || delBtn.contains(e.target)) return;
+      cb.checked = !cb.checked;
+      item.classList.toggle('media-lib-item--selected', cb.checked);
+      updateBulkDeleteBtn();
+    });
+
+    cb.addEventListener('change', () => {
+      item.classList.toggle('media-lib-item--selected', cb.checked);
+      updateBulkDeleteBtn();
+    });
+
+    delBtn.addEventListener('click', () => deleteMediaItems([url], [filename]));
+
+    gridEl.appendChild(item);
+  });
+}
+
+function updateBulkDeleteBtn() {
+  const count = document.querySelectorAll('#ml-grid .media-lib-item__checkbox:checked').length;
+  const btn = document.getElementById('ml-delete-selected');
+  if (!btn) return;
+  btn.hidden = count === 0;
+  btn.textContent = `delete selected (${count})`;
+}
+
+function updateMediaCount() {
+  const el = document.getElementById('ml-count');
+  if (!el || !_mediaPageCache) return;
+  const n = _mediaPageCache.uploads.length;
+  el.textContent = `${n} image${n !== 1 ? 's' : ''}`;
+}
+
+async function handleMediaPageUpload(fileList) {
+  if (!_cloudConfig.cloudName || !_cloudConfig.uploadPreset) {
+    alert('Cloudinary is not configured. Set CLOUDINARY_CLOUD_NAME and CLOUDINARY_UPLOAD_PRESET in Netlify environment variables.');
+    return;
+  }
+
+  const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/svg+xml'];
+  const files = Array.from(fileList).filter(f => allowed.includes(f.type));
+  if (files.length === 0) {
+    alert('No supported image files selected. Use JPG, PNG, WebP, GIF, or SVG.');
+    return;
+  }
+
+  const progressArea = document.getElementById('ml-upload-progress');
+  const progressLabel = progressArea.querySelector('.ml-progress-label');
+  const progressFill = progressArea.querySelector('.progress-bar__fill');
+  const uploadLabel = document.querySelector('.media-lib-page label.btn-primary');
+
+  progressArea.hidden = false;
+  if (uploadLabel) uploadLabel.style.pointerEvents = 'none';
+
+  let completed = 0;
+  const errors = [];
+
+  for (const file of files) {
+    progressLabel.textContent = `Uploading ${completed + 1} of ${files.length}…`;
+    progressFill.style.width = `${(completed / files.length) * 100}%`;
+
+    try {
+      const processed = await resizeImageIfNeeded(file);
+      const data = await uploadToCloudinary(processed);
+      const url = data.secure_url;
+      const filename = data.original_filename || data.public_id;
+      await appendToMediaLibraryAndPage(url, filename);
+    } catch (err) {
+      console.error(`Failed to upload ${file.name}:`, err);
+      errors.push(file.name);
+    }
+    completed++;
+  }
+
+  progressFill.style.width = '100%';
+  const successCount = completed - errors.length;
+  progressLabel.textContent = errors.length
+    ? `Done. ${successCount} uploaded, ${errors.length} failed.`
+    : `Done. ${completed} image${completed !== 1 ? 's' : ''} uploaded.`;
+  setTimeout(() => {
+    progressArea.hidden = true;
+    progressFill.style.width = '0%';
+  }, 2500);
+
+  if (uploadLabel) uploadLabel.style.pointerEvents = '';
+
+  const gridEl = document.getElementById('ml-grid');
+  const searchEl = document.getElementById('ml-search');
+  if (gridEl) renderMediaLibraryGrid(gridEl, _mediaPageCache.uploads, searchEl?.value.trim() || '');
+  updateMediaCount();
+}
+
+async function deleteMediaItems(urls, filenames) {
+  const label = urls.length === 1 ? `"${filenames[0]}"` : `${urls.length} images`;
+  if (!window.confirm(`Remove ${label} from the media library?\n\nNote: images will remain on Cloudinary but will no longer appear in the library.`)) return;
+
+  if (_mediaPageCache) {
+    _mediaPageCache.uploads = _mediaPageCache.uploads.filter(u => !urls.includes(u.url));
+  }
+  if (_mediaCache) {
+    _mediaCache = _mediaCache.filter(u => !urls.includes(u.url));
+  }
+
+  try {
+    const { sha } = await GitHub.read('src/_data/media.json');
+    const uploads = _mediaPageCache?.uploads ?? [];
+    const newSha = await GitHub.write(
+      'src/_data/media.json',
+      JSON.stringify({ uploads }, null, 2),
+      sha,
+      `chore: remove ${urls.length} image${urls.length !== 1 ? 's' : ''} from media library`
+    );
+    if (_mediaPageCache) _mediaPageCache.sha = newSha;
+  } catch (err) {
+    alert(`Failed to update media library: ${err.message}`);
+    loadMediaLibraryPage();
+    return;
+  }
+
+  const gridEl = document.getElementById('ml-grid');
+  const searchEl = document.getElementById('ml-search');
+  if (gridEl) renderMediaLibraryGrid(gridEl, _mediaPageCache.uploads, searchEl?.value.trim() || '');
+  updateMediaCount();
+  updateBulkDeleteBtn();
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function init() {
   const formArea = document.getElementById('form-area');
@@ -1234,48 +1632,6 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.media-tab').forEach(btn => {
     btn.addEventListener('click', () => switchMediaTab(btn.dataset.tab));
   });
-  const CLOUDINARY_MAX_BYTES = 10_000_000;
-  const CLOUDINARY_MAX_DIMENSION = 4096;
-
-  async function resizeImageIfNeeded(file) {
-    if (file.size <= CLOUDINARY_MAX_BYTES) return file;
-    if (file.type === 'image/gif' || file.type === 'image/svg+xml') return file;
-
-    const bitmap = await createImageBitmap(file);
-    const scale = Math.min(1, CLOUDINARY_MAX_DIMENSION / Math.max(bitmap.width, bitmap.height));
-    const w = Math.round(bitmap.width * scale);
-    const h = Math.round(bitmap.height * scale);
-
-    const canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = h;
-    canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
-    bitmap.close();
-
-    for (const quality of [0.85, 0.7, 0.5]) {
-      const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', quality));
-      if (blob.size <= CLOUDINARY_MAX_BYTES) {
-        return new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' });
-      }
-    }
-
-    return new Promise(res => canvas.toBlob(b => res(
-      new File([b], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' })
-    ), 'image/jpeg', 0.5));
-  }
-
-  async function uploadToCloudinary(file) {
-    const body = new FormData();
-    body.append('file', file);
-    body.append('upload_preset', _cloudConfig.uploadPreset);
-    const res = await fetch(`https://api.cloudinary.com/v1_1/${_cloudConfig.cloudName}/image/upload`, {
-      method: 'POST',
-      body,
-    });
-    if (!res.ok) throw new Error(`Cloudinary upload failed: ${res.status}`);
-    return res.json();
-  }
-
   document.getElementById('media-upload-trigger').addEventListener('click', () => {
     if (!_cloudConfig.cloudName || !_cloudConfig.uploadPreset) {
       alert('Cloudinary is not configured. Set CLOUDINARY_CLOUD_NAME and CLOUDINARY_UPLOAD_PRESET in Netlify environment variables.');
