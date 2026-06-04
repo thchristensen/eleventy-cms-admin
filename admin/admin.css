@@ -269,6 +269,8 @@ button {
   flex: 1;
   padding: 2rem 2.5rem 4rem;
   max-width: 780px;
+  max-width: 900px;
+  margin-inline: auto;
 }
 
 /* ── Fields ───────────────────────────────────────────────────── */
