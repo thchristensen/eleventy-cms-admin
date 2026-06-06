@@ -169,6 +169,41 @@ function buildForm(schemaNode, dataNode, container, pathPrefix) {
       container.appendChild(addBtn);
     }
 
+    if (schemaNode.bulk_upload && !singleField) {
+      const imageFieldKey = resolveBulkImageField(schemaNode._item);
+      if (imageFieldKey) {
+        const bulkLabel = document.createElement('label');
+        bulkLabel.className = 'btn btn-outline array-bulk-upload-btn';
+        bulkLabel.textContent = '↑ Upload Images';
+        const bulkInput = document.createElement('input');
+        bulkInput.type = 'file';
+        bulkInput.multiple = true;
+        bulkInput.accept = 'image/jpeg,image/png,image/webp,image/gif,image/svg+xml';
+        bulkInput.style.display = 'none';
+        bulkLabel.appendChild(bulkInput);
+        container.appendChild(bulkLabel);
+
+        const bulkProgressArea = document.createElement('div');
+        bulkProgressArea.className = 'media-lib-page__upload-progress';
+        bulkProgressArea.hidden = true;
+        const bpLabel = document.createElement('span');
+        bpLabel.className = 'ml-progress-label';
+        const bpTrack = document.createElement('div');
+        bpTrack.className = 'progress-bar';
+        const bpFill = document.createElement('div');
+        bpFill.className = 'progress-bar__fill';
+        bpTrack.appendChild(bpFill);
+        bulkProgressArea.appendChild(bpLabel);
+        bulkProgressArea.appendChild(bpTrack);
+        container.appendChild(bulkProgressArea);
+
+        bulkInput.addEventListener('change', (e) => {
+          handleBulkArrayUpload(listEl, schemaNode._item, imageFieldKey, e.target.files, bulkProgressArea, { allowRemove, allowReorder, singleField }, addBtn, max);
+          e.target.value = '';
+        });
+      }
+    }
+
     updateArrayControls(listEl, addBtn);
     return;
   }
@@ -811,41 +846,8 @@ function renderFolderList(container, collSchema, collectionKey, githubFiles) {
     headerActions.appendChild(newBtn);
   }
 
-  let bulkProgressArea = null;
-  if (collSchema.bulk_image_upload) {
-    const uploadLabel = document.createElement('label');
-    uploadLabel.className = 'btn btn-outline';
-    uploadLabel.textContent = '↑ Upload Images';
-    const fileInput = document.createElement('input');
-    fileInput.type = 'file';
-    fileInput.multiple = true;
-    fileInput.accept = 'image/jpeg,image/png,image/webp,image/gif,image/svg+xml';
-    fileInput.style.display = 'none';
-    uploadLabel.appendChild(fileInput);
-    headerActions.appendChild(uploadLabel);
-
-    bulkProgressArea = document.createElement('div');
-    bulkProgressArea.className = 'media-lib-page__upload-progress';
-    bulkProgressArea.hidden = true;
-    const bProgressLabel = document.createElement('span');
-    bProgressLabel.className = 'ml-progress-label';
-    const bProgressTrack = document.createElement('div');
-    bProgressTrack.className = 'progress-bar';
-    const bProgressFill = document.createElement('div');
-    bProgressFill.className = 'progress-bar__fill';
-    bProgressTrack.appendChild(bProgressFill);
-    bulkProgressArea.appendChild(bProgressLabel);
-    bulkProgressArea.appendChild(bProgressTrack);
-
-    fileInput.addEventListener('change', (e) => {
-      handleBulkImageUpload(collectionKey, collSchema, e.target.files, bulkProgressArea);
-      e.target.value = '';
-    });
-  }
-
   header.appendChild(headerActions);
   view.appendChild(header);
-  if (bulkProgressArea) view.appendChild(bulkProgressArea);
 
   const itemsEl = document.createElement('div');
   itemsEl.className = 'collection-list-view__items';
@@ -1529,22 +1531,13 @@ function updateMediaCount() {
   el.textContent = `${n} image${n !== 1 ? 's' : ''}`;
 }
 
-function resolveBulkImageField(collSchema) {
-  if (collSchema.bulk_image_field) return collSchema.bulk_image_field;
-  return Object.keys(collSchema.fields || {}).find(
-    k => collSchema.fields[k]._type === 'image'
-  ) ?? null;
+function resolveBulkImageField(itemSchema) {
+  return Object.keys(itemSchema || {}).find(k => itemSchema[k].type === 'image') ?? null;
 }
 
-async function handleBulkImageUpload(collectionKey, collSchema, fileList, progressArea) {
+async function handleBulkArrayUpload(listEl, itemSchema, imageFieldKey, fileList, progressArea, options, addBtn, max) {
   if (!_cloudConfig.cloudName || !_cloudConfig.uploadPreset) {
     alert('Cloudinary is not configured. Set CLOUDINARY_CLOUD_NAME and CLOUDINARY_UPLOAD_PRESET in Netlify environment variables.');
-    return;
-  }
-
-  const imageField = resolveBulkImageField(collSchema);
-  if (!imageField) {
-    alert('No image field found in this collection\'s schema. Add an image field or set "bulk_image_field".');
     return;
   }
 
@@ -1555,29 +1548,24 @@ async function handleBulkImageUpload(collectionKey, collSchema, fileList, progre
     return;
   }
 
+  const currentCount = listEl.querySelectorAll(':scope > .array-item').length;
+  const available = max !== null ? max - currentCount : Infinity;
+  const toUpload = available > 0 ? files.slice(0, available) : [];
+  if (toUpload.length === 0) {
+    alert('This gallery is already at its maximum image count.');
+    return;
+  }
+
   const progressLabel = progressArea.querySelector('.ml-progress-label');
   const progressFill = progressArea.querySelector('.progress-bar__fill');
   progressArea.hidden = false;
 
-  const ext = collSchema.extension || 'json';
-
-  // Load existing slugs once for collision detection across the batch
-  const existingSlugs = new Set();
-  try {
-    const entries = await GitHub.list(collSchema.folder);
-    if (Array.isArray(entries)) {
-      entries
-        .filter(e => e.type === 'file' && e.name.endsWith(`.${ext}`))
-        .forEach(e => existingSlugs.add(e.name.replace(new RegExp(`\\.${ext}$`), '')));
-    }
-  } catch { /* folder may not exist yet */ }
-
   let completed = 0;
   const errors = [];
 
-  for (const file of files) {
-    progressLabel.textContent = `Uploading ${completed + 1} of ${files.length}…`;
-    progressFill.style.width = `${(completed / files.length) * 100}%`;
+  for (const file of toUpload) {
+    progressLabel.textContent = `Uploading ${completed + 1} of ${toUpload.length}…`;
+    progressFill.style.width = `${(completed / toUpload.length) * 100}%`;
 
     try {
       const processed = await resizeImageIfNeeded(file);
@@ -1586,14 +1574,12 @@ async function handleBulkImageUpload(collectionKey, collSchema, fileList, progre
       const filename = result.original_filename || result.public_id;
       await appendToMediaLibrary(url, filename, result.public_id);
 
-      const base = slugify(file.name.replace(/\.[^.]+$/, '')) || `image-${Date.now()}`;
-      let slug = base;
-      let suffix = 2;
-      while (existingSlugs.has(slug)) slug = `${base}-${suffix++}`;
-      existingSlugs.add(slug);
-
-      const repoPath = `${collSchema.folder}/${slug}.${ext}`;
-      await GitHub.write(repoPath, JSON.stringify({ [imageField]: url }, null, 2), null, `chore: add ${slug} via bulk upload`);
+      const count = listEl.querySelectorAll(':scope > .array-item').length;
+      const newPath = `${listEl.dataset.arrayPath}.${count}`;
+      const newItem = makeArrayItem(itemSchema, { [imageFieldKey]: url }, newPath, options);
+      listEl.appendChild(newItem);
+      reindexArray(listEl);
+      updateArrayControls(listEl, addBtn);
     } catch (err) {
       console.error(`Failed to upload ${file.name}:`, err);
       errors.push(file.name);
@@ -1611,10 +1597,6 @@ async function handleBulkImageUpload(collectionKey, collSchema, fileList, progre
     progressArea.hidden = true;
     progressFill.style.width = '0%';
   }, 2500);
-
-  if (successCount > 0) {
-    await loadFolderList(collectionKey, collSchema);
-  }
 }
 
 async function handleMediaPageUpload(fileList) {

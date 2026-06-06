@@ -219,6 +219,7 @@ A repeating list of items, each built from the same `_item` schema.
 | `allow_reorder`  | boolean | `false` | Set to `true` to show ↑ ↓ buttons on each item          |
 | `add_to_top`     | boolean | `false` | Set to `true` to prepend new items instead of appending |
 | `_single_field`  | boolean | `false` | Each item holds a scalar value directly rather than an object with named keys. Use this when `_item` is a single field type (e.g. an image gallery where every item is just a URL string). |
+| `bulk_upload`    | boolean | `false` | Adds an "↑ Upload Images" button that lets editors select multiple images at once. Each image is uploaded to Cloudinary and appended as a new item, with the URL placed in the first `image`-type field found in `_item`. Only works when `_item` is an object schema containing at least one `image` field. |
 
 `_item` can itself contain objects and nested arrays.
 
@@ -273,11 +274,9 @@ Manages multiple items stored as individual JSON files in a folder.
 | `extension`      | string  | File extension for items (e.g. `"json"`)                                    |
 | `create`         | boolean | Show "New item" button                                                       |
 | `delete`         | boolean | Show "Delete" button on items                                                |
-| `slug_field`          | string  | Field name whose value is slugified to form the filename                    |
-| `preview_field`       | string  | Field name shown as the item title in the collection list                   |
-| `bulk_image_upload`   | boolean | Show an "Upload Images" button on the collection list to create items from images in bulk |
-| `bulk_image_field`    | string  | Field to populate with the uploaded image URL (defaults to the first `image` field in `fields`) |
-| `fields`              | object  | Schema for each item (same field-type syntax as pages)                      |
+| `slug_field`     | string  | Field name whose value is slugified to form the filename                    |
+| `preview_field`  | string  | Field name shown as the item title in the collection list                   |
+| `fields`         | object  | Schema for each item (same field-type syntax as pages)                      |
 
 ---
 

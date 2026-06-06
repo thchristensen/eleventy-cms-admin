@@ -1099,6 +1099,10 @@ fieldset.group,
   gap: 0.5rem;
 }
 
+.array-bulk-upload-btn {
+  margin-left: 0.5rem;
+}
+
 .collection-list-view__title {
   font-size: 1.125rem;
   font-weight: 600;
