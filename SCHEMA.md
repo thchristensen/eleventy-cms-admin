@@ -273,9 +273,11 @@ Manages multiple items stored as individual JSON files in a folder.
 | `extension`      | string  | File extension for items (e.g. `"json"`)                                    |
 | `create`         | boolean | Show "New item" button                                                       |
 | `delete`         | boolean | Show "Delete" button on items                                                |
-| `slug_field`     | string  | Field name whose value is slugified to form the filename                    |
-| `preview_field`  | string  | Field name shown as the item title in the collection list                   |
-| `fields`         | object  | Schema for each item (same field-type syntax as pages)                      |
+| `slug_field`          | string  | Field name whose value is slugified to form the filename                    |
+| `preview_field`       | string  | Field name shown as the item title in the collection list                   |
+| `bulk_image_upload`   | boolean | Show an "Upload Images" button on the collection list to create items from images in bulk |
+| `bulk_image_field`    | string  | Field to populate with the uploaded image URL (defaults to the first `image` field in `fields`) |
+| `fields`              | object  | Schema for each item (same field-type syntax as pages)                      |
 
 ---
 

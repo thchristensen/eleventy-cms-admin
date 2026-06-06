@@ -1093,6 +1093,12 @@ fieldset.group,
   border-bottom: 1px solid var(--border);
 }
 
+.collection-list-view__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .collection-list-view__title {
   font-size: 1.125rem;
   font-weight: 600;
