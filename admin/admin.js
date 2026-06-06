@@ -1215,6 +1215,10 @@ function cloudinaryPublicIdFromUrl(url) {
   return m ? m[1] : null;
 }
 
+function cloudinaryThumbUrl(url, maxWidth = 200) {
+  return url.replace(/\/upload\//, `/upload/w_${maxWidth},c_limit,q_auto,f_auto/`);
+}
+
 async function appendToMediaLibrary(url, filename, publicId) {
   try {
     let uploads = [];
@@ -1483,7 +1487,7 @@ function renderMediaLibraryGrid(gridEl, uploads, searchTerm = '') {
 
     const img = document.createElement('img');
     img.className = 'media-lib-item__img';
-    img.src = url;
+    img.src = cloudinaryThumbUrl(url);
     img.alt = filename;
     img.loading = 'lazy';
 
@@ -1506,6 +1510,7 @@ function renderMediaLibraryGrid(gridEl, uploads, searchTerm = '') {
 
     item.addEventListener('click', (e) => {
       if (e.target === delBtn || delBtn.contains(e.target)) return;
+      if (e.target === cb || checkWrap.contains(e.target)) return;
       cb.checked = !cb.checked;
       item.classList.toggle('media-lib-item--selected', cb.checked);
       updateBulkDeleteBtn();
