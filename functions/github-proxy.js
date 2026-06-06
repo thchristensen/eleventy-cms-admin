@@ -45,6 +45,34 @@ exports.handler = async function (event, context) {
     };
   }
 
+  if (event.httpMethod === 'POST') {
+    const body = JSON.parse(event.body || '{}');
+    if (body.action === 'cloudinary-delete') {
+      const apiKey    = process.env.CLOUDINARY_API_KEY;
+      const apiSecret = process.env.CLOUDINARY_API_SECRET;
+      const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+      if (!apiKey || !apiSecret || !cloudName) {
+        return { statusCode: 500, body: JSON.stringify({ error: 'Missing Cloudinary env vars: CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET, CLOUDINARY_CLOUD_NAME' }) };
+      }
+      const publicIds = body.publicIds;
+      if (!Array.isArray(publicIds) || publicIds.length === 0) {
+        return { statusCode: 400, body: JSON.stringify({ error: 'Missing publicIds' }) };
+      }
+      const params = publicIds.map(id => `public_ids[]=${encodeURIComponent(id)}`).join('&');
+      const auth = Buffer.from(`${apiKey}:${apiSecret}`).toString('base64');
+      const res = await fetch(
+        `https://api.cloudinary.com/v1_1/${cloudName}/resources/image/upload?${params}&invalidate=true`,
+        { method: 'DELETE', headers: { 'Authorization': `Basic ${auth}` } }
+      );
+      return {
+        statusCode: res.status,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(await res.json()),
+      };
+    }
+    return { statusCode: 400, body: JSON.stringify({ error: 'Unknown action' }) };
+  }
+
   if (event.httpMethod === 'DELETE') {
     const { path, message, sha } = JSON.parse(event.body || '{}');
     if (!path || !message || !sha) {

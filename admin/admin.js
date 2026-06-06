@@ -1170,7 +1170,7 @@ function renderMediaGrid(grid, uploads, term = '') {
   });
 }
 
-async function appendToMediaLibrary(url, filename) {
+async function appendToMediaLibrary(url, filename, publicId) {
   try {
     let uploads = [];
     let sha;
@@ -1179,7 +1179,9 @@ async function appendToMediaLibrary(url, filename) {
       uploads = JSON.parse(content).uploads || [];
       sha = existingSha;
     } catch { /* file missing — create it */ }
-    uploads.unshift({ url, filename, uploadedAt: new Date().toISOString() });
+    const entry = { url, filename, uploadedAt: new Date().toISOString() };
+    if (publicId) entry.publicId = publicId;
+    uploads.unshift(entry);
     await GitHub.write(
       'src/_data/media.json',
       JSON.stringify({ uploads }, null, 2),
@@ -1192,8 +1194,9 @@ async function appendToMediaLibrary(url, filename) {
   }
 }
 
-async function appendToMediaLibraryAndPage(url, filename) {
+async function appendToMediaLibraryAndPage(url, filename, publicId) {
   const entry = { url, filename, uploadedAt: new Date().toISOString() };
+  if (publicId) entry.publicId = publicId;
   if (_mediaPageCache) _mediaPageCache.uploads.unshift(entry);
   if (_mediaCache) _mediaCache.unshift(entry);
   const uploads = _mediaPageCache?.uploads ?? [entry];
@@ -1392,9 +1395,11 @@ function renderMediaLibraryPage(container) {
 
   deleteSelectedBtn.addEventListener('click', () => {
     const checked = grid.querySelectorAll('.media-lib-item__checkbox:checked');
-    const urls = [...checked].map(cb => cb.closest('.media-lib-item').dataset.url);
-    const filenames = [...checked].map(cb => cb.closest('.media-lib-item').dataset.filename);
-    deleteMediaItems(urls, filenames);
+    const items = [...checked].map(cb => cb.closest('.media-lib-item'));
+    const urls = items.map(el => el.dataset.url);
+    const filenames = items.map(el => el.dataset.filename);
+    const publicIds = items.map(el => el.dataset.publicId || '').filter(Boolean);
+    deleteMediaItems(urls, filenames, publicIds);
   });
 }
 
@@ -1415,11 +1420,12 @@ function renderMediaLibraryGrid(gridEl, uploads, searchTerm = '') {
     return;
   }
 
-  filtered.forEach(({ url, filename }) => {
+  filtered.forEach(({ url, filename, publicId }) => {
     const item = document.createElement('div');
     item.className = 'media-lib-item';
     item.dataset.url = url;
     item.dataset.filename = filename;
+    if (publicId) item.dataset.publicId = publicId;
 
     const checkWrap = document.createElement('div');
     checkWrap.className = 'media-lib-item__check';
@@ -1464,7 +1470,7 @@ function renderMediaLibraryGrid(gridEl, uploads, searchTerm = '') {
       updateBulkDeleteBtn();
     });
 
-    delBtn.addEventListener('click', () => deleteMediaItems([url], [filename]));
+    delBtn.addEventListener('click', () => deleteMediaItems([url], [filename], publicId ? [publicId] : []));
 
     gridEl.appendChild(item);
   });
@@ -1518,7 +1524,7 @@ async function handleMediaPageUpload(fileList) {
       const data = await uploadToCloudinary(processed);
       const url = data.secure_url;
       const filename = data.original_filename || data.public_id;
-      await appendToMediaLibraryAndPage(url, filename);
+      await appendToMediaLibraryAndPage(url, filename, data.public_id);
     } catch (err) {
       console.error(`Failed to upload ${file.name}:`, err);
       errors.push(file.name);
@@ -1544,9 +1550,12 @@ async function handleMediaPageUpload(fileList) {
   updateMediaCount();
 }
 
-async function deleteMediaItems(urls, filenames) {
+async function deleteMediaItems(urls, filenames, publicIds = []) {
   const label = urls.length === 1 ? `"${filenames[0]}"` : `${urls.length} images`;
-  if (!window.confirm(`Remove ${label} from the media library?\n\nNote: images will remain on Cloudinary but will no longer appear in the library.`)) return;
+  const cloudinaryNote = publicIds.length > 0
+    ? 'Images will also be permanently deleted from Cloudinary.'
+    : 'Note: images will remain on Cloudinary but will no longer appear in the library.';
+  if (!window.confirm(`Remove ${label} from the media library?\n\n${cloudinaryNote}`)) return;
 
   if (_mediaPageCache) {
     _mediaPageCache.uploads = _mediaPageCache.uploads.filter(u => !urls.includes(u.url));
@@ -1569,6 +1578,22 @@ async function deleteMediaItems(urls, filenames) {
     alert(`Failed to update media library: ${err.message}`);
     loadMediaLibraryPage();
     return;
+  }
+
+  if (publicIds.length > 0) {
+    try {
+      const res = await fetch('/.netlify/functions/github-proxy', {
+        method: 'POST',
+        headers: { ...(await GitHub._authHeaders()), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'cloudinary-delete', publicIds }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        console.warn('Cloudinary delete failed:', data.error || res.status);
+      }
+    } catch (err) {
+      console.warn('Cloudinary delete error:', err);
+    }
   }
 
   const gridEl = document.getElementById('ml-grid');
@@ -1667,7 +1692,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const data = await uploadToCloudinary(processed);
       const url      = data.secure_url;
       const filename = data.original_filename || data.public_id;
-      appendToMediaLibrary(url, filename);
+      appendToMediaLibrary(url, filename, data.public_id);
       selectImage(url);
     } catch (err) {
       console.error('Cloudinary upload error:', err);
