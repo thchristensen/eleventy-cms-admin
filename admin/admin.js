@@ -1210,6 +1210,11 @@ function renderMediaGrid(grid, uploads, term = '') {
   });
 }
 
+function cloudinaryPublicIdFromUrl(url) {
+  const m = url.match(/\/upload\/(?:v\d+\/)?(.+?)(?:\.[^.]+)?$/);
+  return m ? m[1] : null;
+}
+
 async function appendToMediaLibrary(url, filename, publicId) {
   try {
     let uploads = [];
@@ -1465,7 +1470,8 @@ function renderMediaLibraryGrid(gridEl, uploads, searchTerm = '') {
     item.className = 'media-lib-item';
     item.dataset.url = url;
     item.dataset.filename = filename;
-    if (publicId) item.dataset.publicId = publicId;
+    const pid = publicId || cloudinaryPublicIdFromUrl(url);
+    if (pid) item.dataset.publicId = pid;
 
     const checkWrap = document.createElement('div');
     checkWrap.className = 'media-lib-item__check';
@@ -1697,10 +1703,10 @@ async function deleteMediaItems(urls, filenames, publicIds = []) {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        console.warn('Cloudinary delete failed:', data.error || res.status);
+        alert(`Images removed from library but could not be deleted from Cloudinary: ${data.error || res.status}`);
       }
     } catch (err) {
-      console.warn('Cloudinary delete error:', err);
+      alert(`Images removed from library but could not be deleted from Cloudinary: ${err.message}`);
     }
   }
 
